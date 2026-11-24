@@ -1,5 +1,5 @@
 === BikeXplore – Suivi Gravelman amélioré ===
-Version : 2.1.0
+Version : 2.1.1
 
 Classement live d'UN parcours d'une épreuve Gravelman (ou de toute épreuve suivie sur DotVision),
 même quand tous les parcours sont mélangés sur le suivi officiel.

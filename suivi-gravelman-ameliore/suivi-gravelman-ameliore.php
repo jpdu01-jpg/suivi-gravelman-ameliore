@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BikeXplore – Suivi Gravelman amélioré
  * Description: Classement live d'un parcours d'une épreuve Gravelman (ou toute épreuve DotVision) : carte, classement filtré par parcours, coureurs suivis au choix du visiteur. Shortcode [suivi_gravelman url="…" parcours="500 Route" gpx="…"].
- * Version: 2.1.0
+ * Version: 2.1.1
  * Author: BikeXplore
  * License: GPL-2.0-or-later
  * Requires PHP: 7.4
@@ -17,7 +17,7 @@ require_once __DIR__ . '/includes/class-sga-core.php';
 require_once __DIR__ . '/includes/class-sga-updater.php';
 
 final class SGA_Plugin {
-    public const VERSION = '2.1.0';
+    public const VERSION = '2.1.1';
     private const INSTANCES_OPTION = 'sga_instances';
     private const CRON_HOOK = 'sga_refresh';
     private const DATA_TTL = 55;           // secondes entre deux interrogations de DotVision
