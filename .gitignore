@@ -1,0 +1,7 @@
+# Données DotVision mises en cache par les tests (noms et positions des coureurs) : jamais publiées
+tests/.cache/
+tests/wp-stub/.store/
+# Copie de l'ancienne version en ligne, zip local
+_ref/
+*.zip
+.DS_Store

@@ -1,0 +1,47 @@
+name: Publier une version
+
+# À chaque modification du plugin sur main : si le numéro de version (en-tête « Version: »)
+# n'a pas encore été publié, construit le zip et crée la release GitHub correspondante.
+# Les sites WordPress la détectent ensuite comme « Mise à jour disponible ».
+on:
+  push:
+    branches: [main]
+    paths: ['suivi-gravelman-ameliore/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vérifier la syntaxe PHP
+        run: for f in $(find suivi-gravelman-ameliore -name '*.php'); do php -l "$f"; done
+
+      - name: Lire les numéros de version
+        id: v
+        run: |
+          header=$(grep -m1 -E '^\s*\*\s*Version:' suivi-gravelman-ameliore/suivi-gravelman-ameliore.php | sed -E 's/.*Version:\s*//' | tr -d '[:space:]')
+          const=$(grep -m1 -E "VERSION = '" suivi-gravelman-ameliore/suivi-gravelman-ameliore.php | sed -E "s/.*'(.*)'.*/\1/")
+          if [ "$header" != "$const" ]; then echo "::error::Version: $header ≠ VERSION = $const"; exit 1; fi
+          echo "version=$header" >> "$GITHUB_OUTPUT"
+          if gh release view "v$header" >/dev/null 2>&1; then echo "exists=1" >> "$GITHUB_OUTPUT"; fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Construire et publier
+        if: steps.v.outputs.exists != '1'
+        run: |
+          zip -rq suivi-gravelman-ameliore.zip suivi-gravelman-ameliore -x '*.DS_Store'
+          git log -1 --pretty=%B > notes.txt
+          gh release create "v${{ steps.v.outputs.version }}" suivi-gravelman-ameliore.zip \
+            --title "Version ${{ steps.v.outputs.version }}" --notes-file notes.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Version déjà publiée
+        if: steps.v.outputs.exists == '1'
+        run: echo "::warning::v${{ steps.v.outputs.version }} existe déjà — augmentez « Version » et VERSION pour publier une mise à jour."
