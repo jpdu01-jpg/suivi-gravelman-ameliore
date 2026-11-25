@@ -42,27 +42,41 @@
       only: $('[data-sga-only]'), map: $('[data-sga-map]'), mapMeta: $('[data-sga-map-meta]'),
       form: $('[data-sga-follow-form]'), input: $('[data-sga-follow-input]'), datalist: $('[data-sga-datalist]'),
       hint: $('[data-sga-follow-hint]'), cards: $('[data-sga-cards]'),
+      title: $('[data-sga-title]'), course: $('[data-sga-course]'), courseWrap: $('[data-sga-course-wrap]'),
     };
-    const storageKey = `sga:follow:${key}`;
+    /* ---------- parcours affiché ----------
+       Par défaut celui du shortcode ; le visiteur peut en choisir un autre de la même épreuve
+       (choix mémorisé sur son appareil). '' = parcours par défaut. */
+    const courseKey = `sga:course:${key}`;
+    let course = '';
+    try { course = window.localStorage.getItem(courseKey) || ''; } catch (e) { /* navigation privée */ }
+    const defaultCourse = root.dataset.course || '';
+    if (course === defaultCourse) course = '';
+    const params = () => `k=${key}${course ? `&p=${encodeURIComponent(course)}` : ''}`;
+    const storageKey = () => (course ? `sga:follow:${key}:${course}` : `sga:follow:${key}`);
     let data = null;
     let rows = [];
     let route = null;
     let map = null;
     let markers = null;
     const markerById = new Map();
+    let routeLayer = null;
     let remaining = 0;
+    let timer = null;
+    let generation = 0;
 
     /* ---------- coureurs suivis ----------
        Choisis dans la page par le visiteur et mémorisés sur son appareil (rien dans l'adresse).
        À défaut, valeur facultative du shortcode (coureur="…"). */
     const readStored = () => {
-      try { return JSON.parse(window.localStorage.getItem(storageKey) || 'null'); } catch (e) { return null; }
+      try { return JSON.parse(window.localStorage.getItem(storageKey()) || 'null'); } catch (e) { return null; }
     };
-    let followed = readStored()
-      || (root.dataset.defaultRiders || '').split(/[|,;]/).map((s) => s.trim()).filter(Boolean);
+    const initialFollowed = () => readStored()
+      || (course ? [] : (root.dataset.defaultRiders || '').split(/[|,;]/).map((s) => s.trim()).filter(Boolean));
+    let followed = initialFollowed();
 
     const saveFollowed = () => {
-      try { window.localStorage.setItem(storageKey, JSON.stringify(followed)); } catch (e) { /* navigation privée */ }
+      try { window.localStorage.setItem(storageKey(), JSON.stringify(followed)); } catch (e) { /* navigation privée */ }
     };
     const isFollowed = (row) => followed.some((f) => norm(f) === norm(row.name) || (row.bib && norm(f) === norm(row.bib)));
     const findRow = (text) => {
@@ -100,29 +114,39 @@
     /* ---------- carte ---------- */
     const initMap = async () => {
       if (!window.L) { el.mapMeta.textContent = 'La carte n’a pas pu être chargée.'; return; }
+      const gen = generation;
+      route = null;
+      if (routeLayer) routeLayer.clearLayers();
+      if (markers) markers.clearLayers();
+      el.mapMeta.textContent = 'Chargement du tracé…';
       try {
-        const response = await fetch(`${config.ajax}?action=sga_route&k=${key}`, { credentials: 'same-origin' });
-        route = await response.json();
-        if (!response.ok || !Array.isArray(route.points)) throw new Error(route.message || 'Tracé indisponible');
-        map = window.L.map(el.map, { scrollWheelZoom: false, preferCanvas: true });
-        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors', maxZoom: 18,
-        }).addTo(map);
-        const line = window.L.polyline(route.points.map((p) => [p[0], p[1]]), { color: '#ed7d31', opacity: .9, weight: 4 }).addTo(map);
+        const response = await fetch(`${config.ajax}?action=sga_route&${params()}`, { credentials: 'same-origin' });
+        const json = await response.json();
+        if (gen !== generation) return;
+        if (!response.ok || !Array.isArray(json.points)) throw new Error(json.message || 'Tracé indisponible');
+        route = json;
+        if (!map) {
+          map = window.L.map(el.map, { scrollWheelZoom: false, preferCanvas: true });
+          window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors', maxZoom: 18,
+          }).addTo(map);
+          routeLayer = window.L.layerGroup().addTo(map);
+          markers = window.L.layerGroup().addTo(map);
+        }
+        const line = window.L.polyline(route.points.map((p) => [p[0], p[1]]), { color: '#ed7d31', opacity: .9, weight: 4 }).addTo(routeLayer);
         const first = route.points[0];
         const last = route.points[route.points.length - 1];
         window.L.circleMarker([first[0], first[1]], { radius: 7, color: '#fff', fillColor: '#17365d', fillOpacity: 1, weight: 2 })
-          .bindTooltip(route.loop ? 'Départ / arrivée' : 'Départ').addTo(map);
+          .bindTooltip(route.loop ? 'Départ / arrivée' : 'Départ').addTo(routeLayer);
         if (!route.loop) {
           window.L.circleMarker([last[0], last[1]], { radius: 7, color: '#fff', fillColor: '#111', fillOpacity: 1, weight: 2 })
-            .bindTooltip('Arrivée').addTo(map);
+            .bindTooltip('Arrivée').addTo(routeLayer);
         }
-        markers = window.L.layerGroup().addTo(map);
         map.fitBounds(line.getBounds(), { padding: [18, 18] });
         window.setTimeout(() => map.invalidateSize(), 0);
         renderMap();
       } catch (error) {
-        el.mapMeta.textContent = `Tracé indisponible : ${error.message}`;
+        if (gen === generation) el.mapMeta.textContent = `Tracé indisponible : ${error.message}`;
       }
     };
 
@@ -265,6 +289,37 @@
       el.stats.innerHTML = items.map(([label, value]) => `<div><strong>${value ?? 0}</strong><span>${label}</span></div>`).join('');
     };
 
+    const renderCourses = () => {
+      const list = Array.isArray(data && data.courses) ? data.courses : [];
+      if (list.length < 2) { el.courseWrap.hidden = true; return; }
+      const current = data.category;
+      el.course.innerHTML = list.map((c) => `<option value="${escapeHtml(c.key)}"${c.key === current ? ' selected' : ''}>`
+        + `${escapeHtml(c.label)}${c.key === defaultCourse ? ' (par défaut)' : ''} · ${c.count} coureur${c.count > 1 ? 's' : ''}</option>`).join('');
+      el.courseWrap.hidden = false;
+    };
+
+    const switchCourse = (value) => {
+      course = value && value !== defaultCourse ? value : '';
+      try {
+        if (course) window.localStorage.setItem(courseKey, course);
+        else window.localStorage.removeItem(courseKey);
+      } catch (e) { /* navigation privée */ }
+      generation += 1;
+      window.clearTimeout(timer);
+      data = null;
+      rows = [];
+      followed = initialFollowed();
+      el.search.value = '';
+      el.body.innerHTML = '<tr><td colspan="10" class="bx-gm__empty">Chargement…</td></tr>';
+      el.cards.innerHTML = '';
+      el.stats.innerHTML = '';
+      el.meta.textContent = 'Chargement des positions…';
+      root.classList.remove('bx-gm--error');
+      initMap();
+      load();
+    };
+    el.course.addEventListener('change', () => switchCourse(el.course.value));
+
     const render = () => {
       renderCards();
       renderRows();
@@ -273,14 +328,19 @@
 
     /* ---------- chargement ---------- */
     const load = async () => {
+      const gen = generation;
       el.countdown.textContent = 'Actualisation…';
       let next = config.interval || 60000;
       try {
-        const response = await fetch(`${config.ajax}?action=sga_data&k=${key}&_=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
+        const response = await fetch(`${config.ajax}?action=sga_data&${params()}&_=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
         const json = await response.json();
+        if (gen !== generation) return;
+        if (json.course === 'unknown' && course) { switchCourse(''); return; }
         if (!response.ok || json.error) throw new Error(json.message || `HTTP ${response.status}`);
         data = json;
         rows = Array.isArray(data.racers) ? data.racers : [];
+        renderCourses();
+        if (root.dataset.autoTitle) el.title.textContent = `Classement live ${data.category}`;
         el.event.textContent = data.event || 'Gravelman';
         const history = data.history < 100 ? ` · reconstitution de l’historique : ${data.history} %` : '';
         el.meta.textContent = `${data.label || data.category} · ${Number(data.route_km).toFixed(0)} km · départ ${localTime(data.start_at)} · relevé ${localTime(data.captured_at)}${history}`;
@@ -292,11 +352,12 @@
         if (data.history < 100) next = 8000;
         if (data.complete) next = 0;
       } catch (error) {
+        if (gen !== generation) return;
         el.countdown.textContent = `Données indisponibles (${error.message})`;
         root.classList.add('bx-gm--error');
       }
       remaining = Math.round(next / 1000);
-      if (next) window.setTimeout(load, next);
+      if (next) timer = window.setTimeout(load, next);
       else el.countdown.textContent = 'Épreuve terminée · classement définitif';
     };
 

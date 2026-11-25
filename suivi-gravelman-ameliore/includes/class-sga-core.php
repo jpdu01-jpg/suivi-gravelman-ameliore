@@ -338,6 +338,24 @@ final class SGA_Core {
     }
 
     /** Toutes les catégories présentes dans une épreuve (pour l'aide à la configuration). */
+    /** « 500R » → « 500 Route », « 350G » → « 350 Gravel ». */
+    public static function course_label(string $key): string {
+        return preg_match('/^(\d+)([GR])$/', $key, $m) ? $m[1] . ($m[2] === 'G' ? ' Gravel' : ' Route') : $key;
+    }
+
+    /** Parcours proposés au visiteur : ceux qui comptent au moins un coureur (organisation exclue). */
+    public static function list_courses(array $activities, string $exclude_csv = ''): array {
+        $courses = [];
+        foreach (array_keys(self::list_categories($activities)) as $k) {
+            $n = count(self::select_racers($activities, (string) $k, $exclude_csv));
+            if ($n > 0) {
+                $courses[] = ['key' => (string) $k, 'label' => self::course_label((string) $k), 'count' => $n];
+            }
+        }
+        usort($courses, static fn($a, $b) => [(int) $b['key'], substr($a['key'], -1)] <=> [(int) $a['key'], substr($b['key'], -1)]);
+        return $courses;
+    }
+
     public static function list_categories(array $activities): array {
         $found = [];
         foreach ($activities as $activity) {

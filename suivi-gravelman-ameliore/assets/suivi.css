@@ -58,6 +58,10 @@
 .bx-gm--warning .bx-gm__pulse { background:#f59e0b; }
 
 /* Coureurs suivis */
+.bx-gm__course { align-items:center; background:#fff; border:1px solid #dbe7f1; border-top:0; display:flex; flex-wrap:wrap; gap:8px 12px; padding:10px 14px; }
+.bx-gm__course[hidden] { display:none; }
+.bx-gm__course label { color:var(--bx-navy); font-size:15px; font-weight:700; margin:0; }
+.bx-gm__course select { background:#fff; border:1px solid #b7c9d8; border-radius:7px; color:#111; font-size:15px; max-width:100%; padding:8px 12px; }
 .bx-gm__follow { background:#fffaf0; border:1px solid #dbe7f1; border-top:0; padding:14px; }
 .bx-gm__follow-form label { color:var(--bx-navy); display:block; font-size:15px; font-weight:700; margin:0 0 6px; }
 .bx-gm__follow-input { display:flex; gap:8px; max-width:520px; }

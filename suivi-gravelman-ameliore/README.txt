@@ -1,5 +1,5 @@
 === BikeXplore – Suivi Gravelman amélioré ===
-Version : 2.1.1
+Version : 2.2.0
 
 Classement live d'UN parcours d'une épreuve Gravelman (ou de toute épreuve suivie sur DotVision),
 même quand tous les parcours sont mélangés sur le suivi officiel.
@@ -27,6 +27,13 @@ exclure   (facultatif) Noms à retirer du classement, séparés par des virgules
           L'organisation (tag « Équipe », photographe, vidéaste…) est déjà retirée automatiquement.
 titre     (facultatif) Titre affiché (par défaut « Classement live 500R »).
 club      (facultatif) Badge affiché à côté des coureurs suivis (par défaut « BikeXplore »).
+
+== Choix du parcours dans la page ==
+- Liste « Parcours affiché » en haut de la page : le visiteur peut afficher un autre parcours
+  de la même épreuve (350 Gravel, 500 Route…). Le parcours du shortcode reste celui par défaut.
+- Le choix est mémorisé sur l'appareil du visiteur. Les coureurs suivis sont propres à chaque parcours.
+- Pour un autre parcours, le tracé officiel DotVision est utilisé (le paramètre gpx ne concerne
+  que le parcours par défaut). La première fois, l'historique est reconstitué en quelques minutes.
 
 == Coureurs suivis ==
 - Champ « Suivre un coureur » : saisir un nom (même partiel) ou un dossard, puis « Suivre ».

@@ -20,6 +20,7 @@ function wp_next_scheduled() { return true; }
 function wp_schedule_event() {}
 function wp_clear_scheduled_hook() {}
 function register_deactivation_hook() {}
+function plugin_basename($f) { return basename(dirname($f)) . '/' . basename($f); }
 function plugin_dir_url() { return '/plugin/'; }
 function admin_url($p) { return '/' . $p; }
 function wp_register_style($h, $src) { $GLOBALS['assets']['rcss'][$h] = $src; }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: BikeXplore – Suivi Gravelman amélioré
  * Description: Classement live d'un parcours d'une épreuve Gravelman (ou toute épreuve DotVision) : carte, classement filtré par parcours, coureurs suivis au choix du visiteur. Shortcode [suivi_gravelman url="…" parcours="500 Route" gpx="…"].
- * Version: 2.1.1
+ * Version: 2.2.0
  * Author: BikeXplore
  * License: GPL-2.0-or-later
  * Requires PHP: 7.4
@@ -17,7 +17,7 @@ require_once __DIR__ . '/includes/class-sga-core.php';
 require_once __DIR__ . '/includes/class-sga-updater.php';
 
 final class SGA_Plugin {
-    public const VERSION = '2.1.1';
+    public const VERSION = '2.2.0';
     private const INSTANCES_OPTION = 'sga_instances';
     private const CRON_HOOK = 'sga_refresh';
     private const DATA_TTL = 55;           // secondes entre deux interrogations de DotVision
@@ -99,6 +99,8 @@ final class SGA_Plugin {
         ?>
         <section class="bx-gm" data-sga
                  data-key="<?php echo esc_attr($key); ?>"
+                 data-course="<?php echo esc_attr($category); ?>"
+                 data-auto-title="<?php echo $atts['titre'] === '' ? '1' : ''; ?>"
                  data-default-riders="<?php echo esc_attr((string) $atts['coureur']); ?>"
                  data-club="<?php echo esc_attr((string) $atts['club']); ?>">
             <header class="bx-gm__header">
@@ -106,7 +108,7 @@ final class SGA_Plugin {
                     <span class="bx-gm__logo"><img src="<?php echo esc_url($logo); ?>" alt="BikeXplore"></span>
                     <div>
                         <p class="bx-gm__eyebrow" data-sga-event>GRAVELMAN</p>
-                        <h2><?php echo esc_html($title); ?></h2>
+                        <h2 data-sga-title><?php echo esc_html($title); ?></h2>
                         <p class="bx-gm__meta" data-sga-meta>Chargement des positions…</p>
                     </div>
                 </div>
@@ -115,6 +117,11 @@ final class SGA_Plugin {
                     <span data-sga-countdown>Actualisation…</span>
                 </div>
             </header>
+
+            <div class="bx-gm__course" data-sga-course-wrap hidden>
+                <label for="sga-course-<?php echo esc_attr($key); ?>">Parcours affiché</label>
+                <select id="sga-course-<?php echo esc_attr($key); ?>" data-sga-course></select>
+            </div>
 
             <div class="bx-gm__stats" data-sga-stats aria-label="Résumé de la course"></div>
 
@@ -220,12 +227,54 @@ final class SGA_Plugin {
         return preg_replace('/[^a-f0-9]/', '', (string) ($_GET['k'] ?? ''));
     }
 
-    public static function ajax_sga_data(): void {
+    /**
+     * Suivi demandé : celui de la page, ou un autre parcours de la même épreuve choisi par le
+     * visiteur (paramètre p). Chaque parcours choisi devient un suivi à part (tracé officiel DotVision).
+     */
+    private static function requested(): array {
         $key = self::request_key();
         $instance = self::instance($key);
         if (!$instance) {
             wp_send_json(['error' => true, 'message' => 'Suivi inconnu.'], 404);
         }
+        $course = SGA_Core::category_key((string) ($_GET['p'] ?? ''));
+        if (!$course || $course === $instance['category']) {
+            return [$key, $instance];
+        }
+        try {
+            $known = array_column(self::courses($instance), 'key');
+        } catch (Throwable $e) {
+            wp_send_json(['error' => true, 'message' => 'Liste des parcours indisponible.'], 502);
+        }
+        if (!in_array($course, $known, true)) {
+            wp_send_json(['error' => true, 'course' => 'unknown', 'message' => "Parcours $course absent de cette épreuve."], 404);
+        }
+        $child = array_merge($instance, [
+            'category' => $course,
+            'label'    => SGA_Core::course_label($course),
+            'gpx'      => '',
+            'parent'   => $key,
+        ]);
+        $child_key = substr(md5($key . '|' . $course), 0, 12);
+        self::register_instance($child_key, $child);
+        return [$child_key, $child];
+    }
+
+    private static function activities(int $id): array {
+        $activities = get_transient('sga_activities_' . $id);
+        if (!is_array($activities)) {
+            $activities = self::fetch_json(SGA_Core::API_BASE . "/stages/$id/activities/all?includeParticipants=true&includeDataSources=true");
+            set_transient('sga_activities_' . $id, $activities, 15 * MINUTE_IN_SECONDS);
+        }
+        return $activities;
+    }
+
+    private static function courses(array $instance): array {
+        return SGA_Core::list_courses(self::activities((int) $instance['stage_id']), (string) ($instance['exclude'] ?? ''));
+    }
+
+    public static function ajax_sga_data(): void {
+        [$key, $instance] = self::requested();
         $data = get_transient('sga_data_' . $key);
         if (!is_array($data) || (time() - ($data['generated'] ?? 0)) > ($data['ttl'] ?? self::DATA_TTL)) {
             $fresh = self::refresh($key, $instance);
@@ -242,11 +291,7 @@ final class SGA_Plugin {
     }
 
     public static function ajax_sga_route(): void {
-        $key = self::request_key();
-        $instance = self::instance($key);
-        if (!$instance) {
-            wp_send_json(['error' => true, 'message' => 'Suivi inconnu.'], 404);
-        }
+        [$key, $instance] = self::requested();
         try {
             $route = self::route($key, $instance);
         } catch (Throwable $e) {
@@ -319,11 +364,7 @@ final class SGA_Plugin {
             $start = strtotime($stage['begin']);
             $end = strtotime($stage['end']);
 
-            $activities = get_transient('sga_activities_' . $id);
-            if (!is_array($activities)) {
-                $activities = self::fetch_json("$B/stages/$id/activities/all?includeParticipants=true&includeDataSources=true");
-                set_transient('sga_activities_' . $id, $activities, 15 * MINUTE_IN_SECONDS);
-            }
+            $activities = self::activities($id);
             $racers = SGA_Core::select_racers($activities, $instance['category'], $instance['exclude'] ?? '');
             if (!$racers) {
                 $cats = implode(', ', array_keys(SGA_Core::list_categories($activities)));
@@ -382,6 +423,7 @@ final class SGA_Plugin {
                 'stage'        => $stage['name'],
                 'category'     => $instance['category'],
                 'label'        => $instance['label'],
+                'courses'      => SGA_Core::list_courses($activities, (string) ($instance['exclude'] ?? '')),
                 'route_name'   => $route['name'],
                 'route_km'     => $route['distance_km'],
                 'route_source' => $route['source'],
